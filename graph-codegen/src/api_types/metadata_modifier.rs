@@ -24,6 +24,31 @@ pub trait MetadataModifier {
         false
     }
 
+    fn force_update_targets(&mut self, modifier_map: &ModifierMap) {
+        for (match_target, match_target_vec) in modifier_map.map.iter() {
+            for mat_target in match_target_vec.iter() {
+                match match_target {
+                    MatchTarget::OperationId(id) => match mat_target {
+                        MatchTarget::OperationId(replacement) => {
+                            self.replace_operation_id(replacement.as_ref());
+                        }
+                        MatchTarget::OperationMap(replacement) => {
+                            self.replace_operation_mapping(replacement.as_ref());
+                        }
+                    },
+                    MatchTarget::OperationMap(mapping) => match mat_target {
+                        MatchTarget::OperationId(replacement) => {
+                            self.replace_operation_id(replacement.as_ref());
+                        }
+                        MatchTarget::OperationMap(replacement) => {
+                            self.replace_operation_mapping(replacement.as_ref());
+                        }
+                    },
+                }
+            }
+        }
+    }
+
     fn update_targets(&mut self, modifier_map: &ModifierMap) {
         for (match_target, match_target_vec) in modifier_map.map.iter() {
             for mat_target in match_target_vec.iter() {

@@ -59,8 +59,15 @@ impl RequestMetadata {
     }
 
     pub fn transform_id_request(&mut self) {
-        self.operation_mapping = format!("{}Id", self.operation_mapping.to_pascal_case());
-        self.parent = self.operation_mapping.to_string();
+        //self.operation_mapping = format!("{}Id", self.operation_mapping.to_pascal_case());
+        //self.parent = self.operation_mapping.to_string();
+        if let Some(rid) = self.resource_identity.as_ref() {
+            self.operation_mapping = rid.to_string().to_pascal_case();
+            self.parent = self.operation_mapping.to_string();
+        } else {
+            self.operation_mapping = format!("{}Id", self.operation_mapping.to_pascal_case());
+            self.parent = self.operation_mapping.to_string();
+        }
     }
 
     pub fn transform_secondary_id_request(
@@ -99,6 +106,16 @@ impl RequestMetadata {
 
     pub fn set_resource_identity(&mut self, resource_identity: ResourceIdentity) {
         self.resource_identity = Some(resource_identity);
+    }
+
+    pub fn force_resource_identity_mapping(&mut self) {
+        if let Some(rid) = self.resource_identity.as_ref() {
+            let name = rid.to_string().to_pascal_case();
+            self.operation_mapping = name.to_string();
+            self.parent = name.to_string();
+            self.original_parent = name.to_string();
+            self.operation_id = format!("{}.{}", name.to_string(), self.fn_name());
+        }
     }
 }
 
@@ -375,6 +392,12 @@ impl PathMetadata {
             metadata.set_resource_identity(resource_identity);
         }
     }
+
+    pub fn force_resource_identity_mapping(&mut self) {
+        for metadata in self.metadata.iter_mut() {
+            metadata.force_resource_identity_mapping();
+        }
+    }
 }
 
 impl MacroQueueWriter for PathMetadata {
@@ -515,6 +538,12 @@ impl PathMetadataQueue {
             metadata.set_resource_identity(resource_identity);
         }
     }
+
+    pub fn force_resource_identity_mapping(&mut self) {
+        for metadata in self.0.iter_mut() {
+            metadata.force_resource_identity_mapping();
+        }
+    }
 }
 
 impl From<VecDeque<PathMetadata>> for PathMetadataQueue {
@@ -603,6 +632,7 @@ impl From<ResourceParsingInfo> for PathMetadataQueue {
         } else {
             metadata_queue.set_resource_identity(resource_parsing_info.resource_identity);
             metadata_queue.transform_id_metadata(resource_parsing_info.path.as_str());
+            metadata_queue.force_resource_identity_mapping();
         }
 
         let filters = ParserSettings::path_filters(resource_parsing_info.resource_identity);
