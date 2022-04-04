@@ -33,7 +33,7 @@ async fn buffered_requests() {
             .users()
             .list_user()
             .select(&["id", "userPrincipalName"])
-            .top("5")
+            .top("100")
             .json()
             .await
             .unwrap();
@@ -59,7 +59,7 @@ async fn buffered_requests() {
 
                 license_details
             })
-            .buffered(5);
+            .buffered(100);
 
         while let Some(license_detail) = stream.next().await {
             assert_eq!(license_detail.status(), 200);
