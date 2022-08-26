@@ -1,11 +1,16 @@
 use crate::download::AsyncDownload;
 use crate::download::DownloadClient;
 use crate::traits::*;
+use crate::types::ResponseBody;
 use crate::uploadsession::UploadSessionClient;
 use crate::url::GraphUrl;
 use crate::{
     GraphRequest, GraphResponse, HttpClient, Registry, RequestAttribute, RequestClient, RequestType,
 };
+use async_stream::{stream, try_stream};
+use futures_core::stream::Stream;
+use futures_util::pin_mut;
+use futures_util::stream::StreamExt;
 use graph_core::resource::ResourceIdentity;
 use graph_error::WithGraphErrorAsync;
 use graph_error::{GraphFailure, GraphResult};
@@ -13,7 +18,7 @@ use handlebars::Handlebars;
 use parking_lot::Mutex;
 use reqwest::header::{HeaderMap, HeaderValue, IntoHeaderName, CONTENT_TYPE};
 use reqwest::redirect::Policy;
-use reqwest::Method;
+use reqwest::{IntoUrl, Method};
 use std::fmt::{Debug, Formatter};
 use std::fs::File;
 use std::io::Read;
@@ -79,7 +84,9 @@ impl AsyncClient {
         (file, builder)
     }
 
-    pub fn build(&mut self) -> reqwest::RequestBuilder {
+    // Allow creation of a request with a custom URL
+    // This is useful for calling the `next_link`
+    fn build_with_url<U: IntoUrl>(&mut self, url: U) -> reqwest::RequestBuilder {
         let headers = self.headers.clone();
         self.headers.clear();
         self.headers
@@ -87,7 +94,7 @@ impl AsyncClient {
 
         let builder = self
             .client
-            .request(self.method.clone(), self.url.as_str())
+            .request(self.method.clone(), url)
             .timeout(self.timeout)
             .headers(headers)
             .bearer_auth(self.token.as_str());
@@ -104,6 +111,10 @@ impl AsyncClient {
         }
     }
 
+    pub fn build(&mut self) -> reqwest::RequestBuilder {
+        self.build_with_url(self.url.clone().as_str())
+    }
+
     /// Builds the request and sends it.
     ///
     /// Requests that require a redirect are automatic so we don't need
@@ -118,11 +129,37 @@ impl AsyncClient {
     /// the body.
     pub async fn execute<T>(&mut self) -> GraphResult<GraphResponse<T>>
     where
-        for<'de> T: serde::Deserialize<'de>,
+        for<'de> T: serde::Deserialize<'de> + ODataLink,
     {
-        let builder = self.build();
+        let response = self.response().await?;
+        AsyncTryFrom::<reqwest::Response>::async_try_from(response).await
+    }
+
+    pub async fn execute_with_url<T, U: IntoUrl>(&mut self, url: U) -> GraphResult<GraphResponse<T>>
+    where
+        for<'de> T: serde::Deserialize<'de> + ODataLink,
+    {
+        let builder = self.build_with_url(url);
         let response = builder.send().await?;
         AsyncTryFrom::<reqwest::Response>::async_try_from(response).await
+    }
+
+    fn stream<'a, T>(&'a mut self) -> impl Stream<Item = GraphResult<T>> + 'a
+    where
+        for<'de> T: serde::Deserialize<'de> + ODataLink + 'a + Clone,
+    {
+        try_stream! {
+            let mut result = self.execute::<T>().await?.into_body();
+            let mut next_link = result.next_link().clone();
+            yield result.clone();
+            loop {
+                if let Some(nl) = next_link {
+                    result = self.execute_with_url(nl).await?.into_body();
+                    next_link = result.next_link().clone();
+                    yield result.clone();
+                }
+            }
+        }
     }
 
     pub fn clone(&mut self) -> Self {
@@ -201,9 +238,21 @@ impl AsyncHttpClient {
 
     pub async fn execute<T>(&self) -> GraphResult<GraphResponse<T>>
     where
-        for<'de> T: serde::Deserialize<'de>,
+        for<'de> T: serde::Deserialize<'de> + ODataLink,
     {
         self.client.lock().execute().await
+    }
+
+    fn stream<'a, T>(&'a mut self) -> impl Stream<Item = GraphResult<T>> + 'a
+    where
+        for<'de> T: serde::Deserialize<'de> + ODataLink + 'a + Clone,
+    {
+        let mut client = self.client.lock();
+        stream! {
+            for await value in client.stream() {
+                yield value
+            }
+        }
     }
 }
 
