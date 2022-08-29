@@ -141,7 +141,7 @@ impl AsyncClient {
         AsyncTryFrom::<reqwest::Response>::async_try_from(response).await
     }
 
-    fn stream<'a, T>(&'a mut self) -> impl Stream<Item = GraphResult<T>> + 'a
+    fn paginate<'a, T>(&'a mut self) -> impl Stream<Item = GraphResult<T>> + 'a
     where
         for<'de> T: serde::Deserialize<'de> + ODataLink + 'a + Clone,
     {
@@ -238,13 +238,13 @@ impl AsyncHttpClient {
         self.client.lock().execute().await
     }
 
-    pub fn stream<'a, T>(&'a self) -> impl Stream<Item = GraphResult<T>> + 'a
+    pub fn paginate<'a, T>(&'a self) -> impl Stream<Item = GraphResult<T>> + 'a
     where
         for<'de> T: serde::Deserialize<'de> + ODataLink + 'a + Clone,
     {
         let mut client = self.client.lock();
         stream! {
-            for await value in client.stream() {
+            for await value in client.paginate() {
                 yield value
             }
         }

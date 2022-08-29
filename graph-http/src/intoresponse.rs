@@ -351,13 +351,13 @@ where
         AsyncTryFrom::<reqwest::Response>::async_try_from(response).await
     }
 
-    pub fn stream(self) -> impl Stream<Item = GraphResult<T>> + 'a
+    pub fn paginate(self) -> impl Stream<Item = GraphResult<T>> + 'a
     where
         for<'de> T: serde::Deserialize<'de> + ODataLink + 'a + Clone,
     {
         // Box::pin is reequired to be able to use `next()` on the result:
         // https://docs.rs/futures/0.3.23/futures/stream/trait.StreamExt.html#method.next
-        Box::pin(self.client.stream())
+        Box::pin(self.client.paginate())
     }
 }
 
