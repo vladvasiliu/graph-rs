@@ -9,6 +9,7 @@ use crate::{
     RequestClient,
 };
 use bytes::Bytes;
+use futures_core::Stream;
 use graph_error::{GraphFailure, GraphResult};
 use reqwest::header::{HeaderValue, IntoHeaderName};
 use std::marker::PhantomData;
@@ -348,6 +349,15 @@ where
         let request = self.client.build().await;
         let response = request.send().await?;
         AsyncTryFrom::<reqwest::Response>::async_try_from(response).await
+    }
+
+    pub fn stream(self) -> impl Stream<Item = GraphResult<T>> + 'a
+    where
+        for<'de> T: serde::Deserialize<'de> + ODataLink + 'a + Clone,
+    {
+        // Box::pin is reequired to be able to use `next()` on the result:
+        // https://docs.rs/futures/0.3.23/futures/stream/trait.StreamExt.html#method.next
+        Box::pin(self.client.stream())
     }
 }
 
