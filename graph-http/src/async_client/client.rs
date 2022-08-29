@@ -1,7 +1,6 @@
 use crate::download::AsyncDownload;
 use crate::download::DownloadClient;
 use crate::traits::*;
-use crate::types::ResponseBody;
 use crate::uploadsession::UploadSessionClient;
 use crate::url::GraphUrl;
 use crate::{
@@ -9,8 +8,6 @@ use crate::{
 };
 use async_stream::{stream, try_stream};
 use futures_core::stream::Stream;
-use futures_util::pin_mut;
-use futures_util::stream::StreamExt;
 use graph_core::resource::ResourceIdentity;
 use graph_error::WithGraphErrorAsync;
 use graph_error::{GraphFailure, GraphResult};
@@ -152,13 +149,11 @@ impl AsyncClient {
             let mut result = self.execute::<T>().await?.into_body();
             let mut next_link = result.next_link().clone();
             yield result.clone();
-            loop {
-                if let Some(nl) = next_link {
+                while let Some(nl) = next_link {
                     result = self.execute_with_url(nl).await?.into_body();
                     next_link = result.next_link().clone();
                     yield result.clone();
                 }
-            }
         }
     }
 
@@ -243,7 +238,7 @@ impl AsyncHttpClient {
         self.client.lock().execute().await
     }
 
-    fn stream<'a, T>(&'a mut self) -> impl Stream<Item = GraphResult<T>> + 'a
+    pub fn stream<'a, T>(&'a self) -> impl Stream<Item = GraphResult<T>> + 'a
     where
         for<'de> T: serde::Deserialize<'de> + ODataLink + 'a + Clone,
     {
